@@ -6,6 +6,11 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   // Relative base so the build works at any path, e.g. https://<user>.github.io/<repo>/
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+    ),
+  },
   plugins: [
     tailwindcss(),
     react(),

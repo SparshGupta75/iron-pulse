@@ -83,6 +83,10 @@ export interface WorkoutSet {
   type: SetType;
   weight: number;
   reps: number;
+  /** Timed exercises (plank, cardio): seconds held or moved. */
+  durationSec?: number;
+  /** Distance exercises: kilometres covered. */
+  distanceKm?: number;
   rpe?: number;
   rir?: number;
   completed: boolean;

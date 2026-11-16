@@ -4,9 +4,9 @@ import { ExerciseDemo } from './ui';
 import { EXERCISE_MEDIA } from '../db/exerciseMedia';
 
 /** Looping demo photos plus step-by-step instructions for built-in exercises. */
-export function ExerciseHowTo({ exerciseId }: { exerciseId: string }) {
+export function ExerciseHowTo({ exerciseId, defaultOpen = false }: { exerciseId: string; defaultOpen?: boolean }) {
   const [steps, setSteps] = useState<string[]>([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
     let cancelled = false;

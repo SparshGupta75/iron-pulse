@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, Plus, Dumbbell, Trophy, Medal, Clock, Weight, Check } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Plus, Dumbbell, Trophy, Medal, Clock, Weight, Check, Share2 } from 'lucide-react';
 import { db } from '../../db/db';
-import type { Exercise, WorkoutSession } from '../../types';
+import type { Exercise, WorkoutSession, WorkoutSet } from '../../types';
 import { useWorkoutStore } from '../../store/workoutStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useNav } from '../../store/navStore';
@@ -13,11 +13,16 @@ import { fmtClock, fmtDuration, fmtVolume, sessionVolume } from '../../utils/for
 import { ConfirmSheet, Stat } from '../ui';
 import { ExerciseBlock, SUPERSET_COLORS } from './ExerciseBlock';
 import AddExerciseModal from './AddExerciseModal';
+import { ReorderSheet } from './ReorderSheet';
+import { shareWorkoutCard } from '../../utils/shareCard';
+import { groupByExercise } from '../../hooks/useHistory';
 import CreateExerciseModal from '../routines/CreateExerciseModal';
 
 interface Celebration {
   session: WorkoutSession;
   sets: number;
+  logged: WorkoutSet[];
+  exercises: Map<string, Exercise>;
   workoutNumber: number;
 }
 
@@ -36,6 +41,13 @@ function useRest(now: number): number {
     if (now - restEndsAt < 5000) {
       playChime();
       buzz([180, 90, 180]);
+      // If the app is in the background, also raise a system notification.
+      if (document.hidden && useSettingsStore.getState().restNotify && 'Notification' in window && Notification.permission === 'granted') {
+        const name = useWorkoutStore.getState().restExerciseName;
+        navigator.serviceWorker?.ready
+          .then((reg) => reg.showNotification('Rest over', { body: name ? `Next set: ${name}` : 'Time for your next set', tag: 'rest', icon: 'icons/icon-192.png' }))
+          .catch(() => {});
+      }
     }
     useWorkoutStore.getState().skipRest();
   }, [now, restEndsAt]);
@@ -80,6 +92,7 @@ export default function ActiveWorkout() {
   const { addExercises, discardSession, skipRest, adjustRest } = useWorkoutStore.getState();
   const unit = useSettingsStore((s) => s.unit);
   const defaultRest = useSettingsStore((s) => s.defaultRest);
+  const profileName = useSettingsStore((s) => s.profileName);
   const { loggerOpen, closeLogger, bump, setTab, dataVersion } = useNav();
 
   const now = useNow(Boolean(session));
@@ -95,6 +108,7 @@ export default function ActiveWorkout() {
   const [notes, setNotes] = useState('');
   const [syncRoutine, setSyncRoutine] = useState(true);
   const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   const idsKey = activeExercises.map((e) => e.exerciseId).join('|');
   useEffect(() => {
@@ -177,7 +191,7 @@ export default function ActiveWorkout() {
     bump();
     setTab('home');
     buzz([40, 60, 120]);
-    setCelebration({ session: finished, sets: completed.length, workoutNumber });
+    setCelebration({ session: finished, sets: completed.length, workoutNumber, logged: completed, exercises: exerciseMap });
   };
 
   if (celebration) {
@@ -233,6 +247,21 @@ export default function ActiveWorkout() {
         <button className="btn primary block" style={{ maxWidth: 380, height: 52, marginTop: 28 }} onClick={() => setCelebration(null)}>
           Done
         </button>
+        <button
+          className="btn block"
+          style={{ maxWidth: 380, marginTop: 10 }}
+          onClick={() =>
+            shareWorkoutCard({
+              session: s,
+              groups: groupByExercise(celebration.logged, s.exerciseOrder),
+              exercises: celebration.exercises,
+              unit,
+              name: profileName,
+            })
+          }
+        >
+          <Share2 size={18} /> Share
+        </button>
       </div>
     );
   }
@@ -271,13 +300,13 @@ export default function ActiveWorkout() {
             </p>
           </div>
         ) : (
-          activeExercises.map((ae, i) => (
+          activeExercises.map((ae) => (
             <div key={ae.exerciseId} style={{ borderBottom: '8px solid var(--surface)', paddingBottom: 10 }}>
               <ExerciseBlock
                 info={ae}
                 exercise={exerciseMap.get(ae.exerciseId)}
-                index={i}
                 count={activeExercises.length}
+                onReorder={() => setReordering(true)}
                 superset={ae.supersetGroupId ? supersets.get(ae.supersetGroupId) : undefined}
                 others={activeExercises
                   .filter((o) => o.exerciseId !== ae.exerciseId)
@@ -440,6 +469,13 @@ export default function ActiveWorkout() {
             setPicker(false);
           }}
           onClose={() => setCreating(false)}
+        />
+      )}
+      {reordering && (
+        <ReorderSheet
+          items={activeExercises.map((e) => ({ id: e.exerciseId, exercise: exerciseMap.get(e.exerciseId) }))}
+          onDone={(ids) => (useWorkoutStore.getState().reorderExercises(ids), setReordering(false))}
+          onClose={() => setReordering(false)}
         />
       )}
       {confirmDiscard && (

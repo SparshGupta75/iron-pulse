@@ -18,8 +18,8 @@ import AddExerciseModal from './components/workout/AddExerciseModal';
 import CreateExerciseModal from './components/routines/CreateExerciseModal';
 import ActiveWorkout, { MiniBar } from './components/workout/ActiveWorkout';
 import { BackBar } from './components/ui';
-import { useSettingsStore } from './store/settingsStore';
-import { fmtRest } from './utils/format';
+import { SettingsExtras } from './components/SettingsExtras';
+import ReportPage from './pages/ReportPage';
 
 const TABS: { id: Tab; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Home', Icon: House },
@@ -37,29 +37,6 @@ function Framed({ children }: { children: ReactNode }) {
       <BackBar />
       <div className="scroll">{children}</div>
     </>
-  );
-}
-
-const REST_CHOICES = [0, 60, 90, 120, 180];
-
-function RestDefaultCard() {
-  const { defaultRest, setDefaultRest } = useSettingsStore();
-  return (
-    <div className="pad" style={{ paddingTop: 16, marginBottom: -4 }}>
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>Default Rest Timer</div>
-        <div className="dim" style={{ fontSize: 13, margin: '2px 0 12px' }}>
-          Used for exercises you add to a workout. Change it per exercise while logging.
-        </div>
-        <div className="seg">
-          {REST_CHOICES.map((sec) => (
-            <button key={sec} className={defaultRest === sec ? 'on' : ''} onClick={() => setDefaultRest(sec)} style={{ padding: 0 }}>
-              {fmtRest(sec)}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -107,9 +84,11 @@ function renderScreen(screen: Screen) {
     case 'measures':
       return <Framed><BodyCardioPage /></Framed>;
     case 'settings':
-      return <Framed><RestDefaultCard /><SettingsPage /></Framed>;
+      return <Framed><SettingsExtras /><SettingsPage /></Framed>;
     case 'calendar':
       return <CalendarPage />;
+    case 'report':
+      return <ReportPage />;
     case 'exercises':
       return <ExercisesScreen />;
     case 'exercise':

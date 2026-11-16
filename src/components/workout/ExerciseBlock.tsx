@@ -5,8 +5,7 @@ import {
   Plus,
   Check,
   Trash2,
-  ArrowUp,
-  ArrowDown,
+  ArrowUpDown,
   Flame,
   Calculator,
   Link2,
@@ -21,7 +20,7 @@ import { useNav } from '../../store/navStore';
 import { usePreviousSets } from '../../hooks/usePreviousSets';
 import { findRecords, loadBests, type Bests } from '../../hooks/useHistory';
 import { buzz, primeAudio } from '../../hooks/useWebAudio';
-import { fmtNum, fmtRest } from '../../utils/format';
+import { digitsToSeconds, fmtNum, fmtRest, fmtTime } from '../../utils/format';
 import { ExerciseAvatar, Sheet, SheetItem } from '../ui';
 import { PlateCalculatorSheet } from './PlateCalculatorSheet';
 import { ProgressiveOverloadBadge } from './ProgressiveOverloadBadge';
@@ -35,23 +34,38 @@ const TYPE_META: Record<SetType, { tag: string; label: string; color: string }> 
 const REST_OPTIONS = [0, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300];
 export const SUPERSET_COLORS = ['#B57BFF', '#FF6B9A', '#F5B83D', '#2FD67B', '#2F8CFF'];
 
+/** Time entry on a number pad: digits fill in from the right, so "130" reads 1:30. */
+function TimeInput({ value, placeholder, onChange }: { value?: number; placeholder: string; onChange: (sec: number | undefined) => void }) {
+  return (
+    <input
+      className="set-input"
+      type="text"
+      inputMode="numeric"
+      value={value ? fmtTime(value) : ''}
+      placeholder={placeholder}
+      onChange={(e) => onChange(digitsToSeconds(e.target.value) || undefined)}
+      onFocus={(e) => e.target.select()}
+    />
+  );
+}
+
 interface Props {
   info: ActiveExerciseInfo;
   exercise?: Exercise;
-  index: number;
   count: number;
   /** Superset display data, when this exercise is linked. */
   superset?: { label: string; color: string };
   /** Other exercises in the workout, for linking a superset. */
   others: { id: string; name: string; groupId?: string }[];
+  onReorder: () => void;
 }
 
-export function ExerciseBlock({ info, exercise, index, count, superset, others }: Props) {
+export function ExerciseBlock({ info, exercise, count, superset, others, onReorder }: Props) {
   const { exerciseId } = info;
   const unit = useSettingsStore((s) => s.unit);
   const push = useNav((s) => s.push);
   const allSets = useWorkoutStore((s) => s.activeSets);
-  const { updateSet, toggleSet, addSet, removeSet, removeExercise, moveExercise } = useWorkoutStore.getState();
+  const { updateSet, toggleSet, addSet, removeSet, removeExercise } = useWorkoutStore.getState();
   const { insertWarmupRamp, setSupersetGroup, setExerciseNotes, setExerciseRest } = useWorkoutStore.getState();
 
   const sets = useMemo(() => allSets.filter((s) => s.exerciseId === exerciseId), [allSets, exerciseId]);
@@ -71,7 +85,19 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
 
   const records = useMemo(() => findRecords(sets, bests), [sets, bests]);
   const maxWeight = Math.max(0, ...sets.map((s) => s.weight));
-  const cols = showRpe ? '34px minmax(0,1fr) 62px 54px 46px 40px' : '40px minmax(0,1fr) 74px 64px 44px';
+  const kind = exercise?.trackingType ?? 'WeightReps';
+  const single = kind === 'Time';
+  const cols = single
+    ? '40px minmax(0,1fr) 138px 44px'
+    : showRpe
+      ? '34px minmax(0,1fr) 62px 54px 46px 40px'
+      : '40px minmax(0,1fr) 74px 64px 44px';
+  const prevLabel = (p: { weight: number; reps: number; durationSec?: number; distanceKm?: number }) =>
+    kind === 'Time'
+      ? p.durationSec ? fmtTime(p.durationSec) : '—'
+      : kind === 'Distance'
+        ? `${p.distanceKm ? fmtNum(p.distanceKm) + 'km' : ''} ${p.durationSec ? fmtTime(p.durationSec) : ''}`.trim() || '—'
+        : p.weight ? `${fmtNum(p.weight)}${unit} x ${p.reps}` : `${p.reps} reps`;
   const repHint =
     info.repMin && info.repMax ? (info.repMin === info.repMax ? `${info.repMax}` : `${info.repMin}-${info.repMax}`) : '';
 
@@ -161,9 +187,15 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
       <div className="set-grid set-head" style={{ gridTemplateColumns: cols }}>
         <div>SET</div>
         <div>PREVIOUS</div>
-        <div>{unit.toUpperCase()}</div>
-        <div>REPS</div>
-        {showRpe && <div>RPE</div>}
+        {single ? (
+          <div>TIME</div>
+        ) : (
+          <>
+            <div>{kind === 'Distance' ? 'KM' : kind === 'RepsOnly' ? `+${unit.toUpperCase()}` : unit.toUpperCase()}</div>
+            <div>{kind === 'Distance' ? 'TIME' : 'REPS'}</div>
+          </>
+        )}
+        {showRpe && !single && <div>RPE</div>}
         <Check size={15} style={{ justifySelf: 'center' }} />
       </div>
 
@@ -175,6 +207,7 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
         // With no history, carry the weight down from the set above.
         const above = sets.slice(0, i).reverse().find((x) => x.weight > 0 && x.type !== 'warmup');
         const hintWeight = prev?.weight ?? (s.type === 'warmup' ? undefined : above?.weight);
+        const hintTime = prev?.durationSec ?? (kind === 'Time' ? info.repMax : undefined);
         return (
           <div
             key={s.id}
@@ -187,31 +220,48 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
 
             <button
               className="set-prev num"
-              onClick={() => prev && !s.completed && updateSet(s.id, { weight: prev.weight, reps: prev.reps })}
+              onClick={() =>
+                prev &&
+                !s.completed &&
+                updateSet(s.id, { weight: prev.weight, reps: prev.reps, durationSec: prev.durationSec, distanceKm: prev.distanceKm })
+              }
             >
-              {prev ? `${fmtNum(prev.weight)}${unit} x ${prev.reps}` : '—'}
+              {prev ? prevLabel(prev) : '—'}
             </button>
 
-            <input
-              className="set-input"
-              type="number"
-              inputMode="decimal"
-              step="any"
-              value={s.weight || ''}
-              placeholder={hintWeight ? fmtNum(hintWeight) : '0'}
-              onChange={(e) => updateSet(s.id, { weight: Math.max(0, parseFloat(e.target.value) || 0) })}
-              onFocus={(e) => e.target.select()}
-            />
-            <input
-              className="set-input"
-              type="number"
-              inputMode="numeric"
-              value={s.reps || ''}
-              placeholder={prev ? String(prev.reps) : repHint || '0'}
-              onChange={(e) => updateSet(s.id, { reps: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-              onFocus={(e) => e.target.select()}
-            />
-            {showRpe && (
+            {kind === 'Time' ? (
+              <TimeInput value={s.durationSec} placeholder={hintTime ? fmtTime(hintTime) : '0:00'} onChange={(v) => updateSet(s.id, { durationSec: v })} />
+            ) : (
+              <>
+                <input
+                  className="set-input"
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={(kind === 'Distance' ? s.distanceKm : s.weight) || ''}
+                  placeholder={kind === 'Distance' ? (prev?.distanceKm ? fmtNum(prev.distanceKm) : '0') : hintWeight ? fmtNum(hintWeight) : '0'}
+                  onChange={(e) => {
+                    const v = Math.max(0, parseFloat(e.target.value) || 0);
+                    updateSet(s.id, kind === 'Distance' ? { distanceKm: v || undefined } : { weight: v });
+                  }}
+                  onFocus={(e) => e.target.select()}
+                />
+                {kind === 'Distance' ? (
+                  <TimeInput value={s.durationSec} placeholder={hintTime ? fmtTime(hintTime) : '0:00'} onChange={(v) => updateSet(s.id, { durationSec: v })} />
+                ) : (
+                  <input
+                    className="set-input"
+                    type="number"
+                    inputMode="numeric"
+                    value={s.reps || ''}
+                    placeholder={prev ? String(prev.reps) : repHint || '0'}
+                    onChange={(e) => updateSet(s.id, { reps: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                    onFocus={(e) => e.target.select()}
+                  />
+                )}
+              </>
+            )}
+            {showRpe && !single && (
               <input
                 className="set-input"
                 type="number"
@@ -236,9 +286,21 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
                   // The rest bar is about to take space at the bottom: keep the next row in view.
                   const row = e.currentTarget.parentElement;
                   const next = (row?.nextElementSibling ?? row) as HTMLElement | null;
-                  setTimeout(() => next?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 320);
+                  setTimeout(() => {
+                    // Scroll only the workout list (scrollIntoView can also shift the whole screen).
+                    const scroller = next?.closest('.scroll');
+                    if (!next || !scroller) return;
+                    const over = next.getBoundingClientRect().bottom + 16 - scroller.getBoundingClientRect().bottom;
+                    if (over > 0) scroller.scrollBy({ top: over, behavior: 'smooth' });
+                  }, 320);
                 }
-                toggleSet(s.id, { weight: hintWeight, reps: prev?.reps ?? info.repMax }, exercise?.name);
+                toggleSet(
+                  s.id,
+                  kind === 'Time' || kind === 'Distance'
+                    ? { durationSec: hintTime, distanceKm: prev?.distanceKm }
+                    : { weight: hintWeight, reps: prev?.reps ?? info.repMax },
+                  exercise?.name
+                );
               }}
             >
               <Check size={19} strokeWidth={3} />
@@ -256,11 +318,8 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
       {/* ── Sheets ─────────────────────────────────────────── */}
       {menu && (
         <Sheet title={exercise?.name} onClose={() => setMenu(false)}>
-          {index > 0 && (
-            <SheetItem icon={<ArrowUp size={20} />} label="Move Up" onClick={() => (moveExercise(exerciseId, -1), setMenu(false))} />
-          )}
-          {index < count - 1 && (
-            <SheetItem icon={<ArrowDown size={20} />} label="Move Down" onClick={() => (moveExercise(exerciseId, 1), setMenu(false))} />
+          {count > 1 && (
+            <SheetItem icon={<ArrowUpDown size={20} />} label="Reorder Exercises" onClick={() => (setMenu(false), onReorder())} />
           )}
           <SheetItem
             icon={<ChartColumn size={20} />}

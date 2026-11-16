@@ -7,6 +7,7 @@ export type Screen =
   | { type: 'measures' }
   | { type: 'settings' }
   | { type: 'calendar' }
+  | { type: 'report' }
   | { type: 'exercises' }
   | { type: 'exercise'; id: string }
   | { type: 'routine'; id: string | null }

@@ -6,6 +6,8 @@ interface PreviousSetInfo {
   weight: number;
   reps: number;
   setNumber: number;
+  durationSec?: number;
+  distanceKm?: number;
 }
 
 export function usePreviousSets(exerciseId: string | null): PreviousSetInfo[] {
@@ -54,7 +56,7 @@ export function usePreviousSets(exerciseId: string | null): PreviousSetInfo[] {
           .get(latestSession.id)!
           .filter((s) => s.type !== 'warmup')
           .sort((a, b) => a.setNumber - b.setNumber)
-          .map((s) => ({ weight: s.weight, reps: s.reps, setNumber: s.setNumber }));
+          .map((s) => ({ weight: s.weight, reps: s.reps, setNumber: s.setNumber, durationSec: s.durationSec, distanceKm: s.distanceKm }));
 
         if (!cancelled) setPrevSets(latestSets);
       } catch {

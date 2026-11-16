@@ -1,4 +1,4 @@
-import type { MuscleGroup, WorkoutSet } from '../types';
+import type { MuscleGroup, TrackingType, WorkoutSet } from '../types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -105,4 +105,25 @@ export function weekStreak(startTimes: number[]): number {
     cursor = weekStart(cursor - 86400000);
   }
   return n;
+}
+
+/** 95 -> "1:35" */
+export const fmtTime = (sec: number): string => `${Math.floor(sec / 60)}:${pad(Math.round(sec) % 60)}`;
+
+/** Digits typed on a number pad, read like a microwave: "130" -> 90 seconds. */
+export function digitsToSeconds(raw: string): number {
+  const d = raw.replace(/\D/g, '').slice(-5);
+  if (!d) return 0;
+  return parseInt(d.slice(-2), 10) + (parseInt(d.slice(0, -2) || '0', 10) || 0) * 60;
+}
+
+/** One logged set as text, according to how the exercise is tracked. */
+export function fmtSet(s: WorkoutSet, type: TrackingType | undefined, unit: string): string {
+  if (type === 'Time') return s.durationSec ? fmtTime(s.durationSec) : `${s.reps} reps`;
+  if (type === 'Distance') {
+    const parts = [s.distanceKm ? `${fmtNum(s.distanceKm)} km` : '', s.durationSec ? fmtTime(s.durationSec) : ''];
+    return parts.filter(Boolean).join(' in ') || '—';
+  }
+  if (type === 'RepsOnly') return s.weight ? `+${fmtNum(s.weight)} ${unit} x ${s.reps}` : `${s.reps} reps`;
+  return s.weight ? `${fmtNum(s.weight)} ${unit} x ${s.reps}` : `${s.reps} reps`;
 }

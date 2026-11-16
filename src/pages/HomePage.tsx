@@ -12,6 +12,7 @@ export default function HomePage() {
   const history = useHistory();
   const setTab = useNav((s) => s.setTab);
   const unit = useSettingsStore((s) => s.unit);
+  const plannedToday = useSettingsStore((s) => s.reminderDays).includes((new Date().getDay() + 6) % 7);
   const { sessions } = history;
   const [limit, setLimit] = useState(20);
 
@@ -96,6 +97,23 @@ export default function HomePage() {
             })}
           </div>
         </section>
+
+        {plannedToday && history.loaded && !trained.has(today) && (
+          <section className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14 }}>
+            <div className="avatar" style={{ width: 40, height: 40, background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+              <Dumbbell size={20} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>Training day</div>
+              <div className="dim" style={{ fontSize: 13.5 }}>
+                You planned a workout for today.
+              </div>
+            </div>
+            <button className="btn primary sm" onClick={() => setTab('workout')}>
+              Start
+            </button>
+          </section>
+        )}
 
         {history.loaded && sessions.length === 0 && (
           <section className="card" style={{ padding: '36px 22px', textAlign: 'center' }}>

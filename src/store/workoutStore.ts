@@ -40,7 +40,13 @@ interface WorkoutActions {
   removeSet: (setId: string) => void;
   updateSet: (id: string, updates: Partial<WorkoutSet>) => void;
   /** Toggle completion. `fill` supplies weight/reps when the inputs were left empty. */
-  toggleSet: (id: string, fill?: { weight?: number; reps?: number }, exerciseName?: string) => void;
+  toggleSet: (
+    id: string,
+    fill?: { weight?: number; reps?: number; durationSec?: number; distanceKm?: number },
+    exerciseName?: string
+  ) => void;
+  /** Replace the exercise order with the given ids. */
+  reorderExercises: (ids: string[]) => void;
   insertWarmupRamp: (exerciseId: string, targetWeight: number) => void;
   setSupersetGroup: (exerciseId: string, groupId?: string) => void;
   setExerciseNotes: (exerciseId: string, notes: string) => void;
@@ -161,6 +167,11 @@ export const useWorkoutStore = create<WorkoutStore>()(
           return { activeExercises: list };
         }),
 
+      reorderExercises: (ids) =>
+        set((s) => ({
+          activeExercises: [...s.activeExercises].sort((a, b) => ids.indexOf(a.exerciseId) - ids.indexOf(b.exerciseId)),
+        })),
+
       addSet: (exerciseId) =>
         set((s) => {
           if (!s.activeSession) return s;
@@ -170,6 +181,8 @@ export const useWorkoutStore = create<WorkoutStore>()(
             ...blankSet(s.activeSession.id, exerciseId, mine.length + 1),
             weight: last?.weight ?? 0,
             reps: last?.reps ?? 0,
+            durationSec: last?.durationSec,
+            distanceKm: last?.distanceKm,
           };
           // Insert right after this exercise's last set so order stays stable.
           const idx = last ? s.activeSets.lastIndexOf(last) + 1 : s.activeSets.length;
@@ -206,6 +219,8 @@ export const useWorkoutStore = create<WorkoutStore>()(
                   completed: completing,
                   weight: completing && !x.weight ? fill?.weight ?? 0 : x.weight,
                   reps: completing && !x.reps ? fill?.reps ?? 0 : x.reps,
+                  durationSec: completing && !x.durationSec ? fill?.durationSec : x.durationSec,
+                  distanceKm: completing && !x.distanceKm ? fill?.distanceKm : x.distanceKm,
                   timestamp: completing ? Date.now() : x.timestamp,
                 }
               : x

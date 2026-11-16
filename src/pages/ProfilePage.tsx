@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Settings, ChartColumn, BookOpen, Ruler, CalendarDays, ChevronRight, Pencil } from 'lucide-react';
+import { Settings, ChartColumn, BookOpen, Ruler, CalendarDays, ChevronRight, Pencil, FileChartColumn } from 'lucide-react';
 import { Bar, BarChart, Cell, ResponsiveContainer, XAxis } from 'recharts';
 import { useHistory } from '../hooks/useHistory';
 import { useNav, type Screen } from '../store/navStore';
@@ -15,6 +15,7 @@ const DASHBOARD: { label: string; hint: string; icon: typeof Settings; color: st
   { label: 'Exercises', hint: 'Library & records', icon: BookOpen, color: '#B57BFF', screen: { type: 'exercises' } },
   { label: 'Measures', hint: 'Body & cardio', icon: Ruler, color: '#2FD67B', screen: { type: 'measures' } },
   { label: 'Calendar', hint: 'Training days', icon: CalendarDays, color: '#F5B83D', screen: { type: 'calendar' } },
+  { label: 'Reports', hint: 'Weekly & monthly recap', icon: FileChartColumn, color: '#FF8A4C', screen: { type: 'report' } },
 ];
 
 export default function ProfilePage() {
@@ -142,12 +143,12 @@ export default function ProfilePage() {
           Dashboard
         </p>
         <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {DASHBOARD.map(({ label, hint, icon: Icon, color, screen }) => (
+          {DASHBOARD.map(({ label, hint, icon: Icon, color, screen }, i) => (
             <button
               key={label}
               className="card tappable"
               onClick={() => push(screen)}
-              style={{ padding: 14, textAlign: 'left', color: 'var(--text)' }}
+              style={{ padding: 14, textAlign: 'left', color: 'var(--text)', gridColumn: DASHBOARD.length % 2 && i === DASHBOARD.length - 1 ? 'span 2' : undefined }}
             >
               <span className="avatar" style={{ width: 38, height: 38, borderRadius: 11, background: `${color}22`, color, marginBottom: 12 }}>
                 <Icon size={20} />

@@ -1,356 +1,339 @@
-import { ExerciseHowTo } from '../components/ExerciseHowTo';
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Trophy, Save } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from 'recharts';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, Medal } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { db } from '../db/db';
-import type { Exercise, WorkoutSet, WorkoutSession } from '../types';
+import type { Exercise, WorkoutSession, WorkoutSet } from '../types';
 import { useSettingsStore } from '../store/settingsStore';
+import { useNav } from '../store/navStore';
+import { e1rm, fmtNum, fmtSet, fmtTime, relDate } from '../utils/format';
+import { ExerciseDemo } from '../components/ui';
+import { ExerciseHowTo } from '../components/ExerciseHowTo';
+import { EXERCISE_MEDIA } from '../db/exerciseMedia';
 
 interface Props {
   exerciseId: string;
   onBack: () => void;
 }
 
+interface Entry {
+  session: WorkoutSession;
+  sets: WorkoutSet[];
+}
+
+interface Metric {
+  key: string;
+  label: string;
+  /** Value for one workout. */
+  of: (sets: WorkoutSet[]) => number;
+  fmt: (v: number) => string;
+}
+
+const max = (xs: number[]) => (xs.length ? Math.max(...xs) : 0);
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+const RANGES = [
+  { label: '3M', days: 92 },
+  { label: '1Y', days: 366 },
+  { label: 'All', days: Infinity },
+];
+
 export function ExerciseDetailPage({ exerciseId, onBack }: Props) {
-  const { unit } = useSettingsStore();
+  const unit = useSettingsStore((s) => s.unit);
+  const { push, dataVersion } = useNav();
   const [exercise, setExercise] = useState<Exercise | null>(null);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [tab, setTab] = useState<'summary' | 'history' | 'howto'>('summary');
+  const [metricKey, setMetricKey] = useState<string | null>(null);
+  const [range, setRange] = useState(RANGES[0]);
   const [notes, setNotes] = useState('');
-  const [historySets, setHistorySets] = useState<WorkoutSet[]>([]);
-  const [chartData, setChartData] = useState<{ date: string; maxWeight: number; est1RM: number }[]>([]);
-  const [best1RM, setBest1RM] = useState<number>(0);
-  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
-    db.exercises.get(exerciseId).then((ex: Exercise | undefined) => {
-      if (ex) {
-        setExercise(ex);
-        setNotes(ex.notes || '');
-      }
-    });
+    let cancelled = false;
+    (async () => {
+      const ex = await db.exercises.get(exerciseId);
+      const sets = await db.sets.where('exerciseId').equals(exerciseId).toArray();
+      const working = sets.filter((s) => s.completed && s.type !== 'warmup');
+      const sessions = await db.workoutSessions.bulkGet([...new Set(working.map((s) => s.sessionId))]);
+      if (cancelled) return;
+      setExercise(ex ?? null);
+      setNotes(ex?.notes ?? '');
+      setEntries(
+        sessions
+          .filter((s): s is WorkoutSession => Boolean(s))
+          .sort((a, b) => a.startedAt - b.startedAt)
+          .map((session) => ({
+            session,
+            sets: working.filter((s) => s.sessionId === session.id).sort((a, b) => a.setNumber - b.setNumber),
+          }))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [exerciseId, dataVersion]);
 
-    async function loadHistory() {
-      const sets: WorkoutSet[] = await db.sets
-        .where('exerciseId')
-        .equals(exerciseId)
-        .filter((s: WorkoutSet) => s.completed && s.type !== 'warmup')
-        .toArray();
+  const kind = exercise?.trackingType ?? 'WeightReps';
+  const hasWeight = entries.some((e) => e.sets.some((s) => s.weight > 0));
 
-      if (!sets.length) return;
+  const metrics: Metric[] = useMemo(() => {
+    const w = (v: number) => `${fmtNum(v)} ${unit}`;
+    if (kind === 'Time')
+      return [
+        { key: 'longest', label: 'Longest Time', of: (s) => max(s.map((x) => x.durationSec ?? 0)), fmt: fmtTime },
+        { key: 'total', label: 'Total Time', of: (s) => sum(s.map((x) => x.durationSec ?? 0)), fmt: fmtTime },
+      ];
+    if (kind === 'Distance')
+      return [
+        { key: 'distance', label: 'Distance', of: (s) => sum(s.map((x) => x.distanceKm ?? 0)), fmt: (v) => `${fmtNum(v)} km` },
+        { key: 'time', label: 'Time', of: (s) => sum(s.map((x) => x.durationSec ?? 0)), fmt: fmtTime },
+      ];
+    const reps: Metric[] = [
+      { key: 'reps', label: 'Most Reps', of: (s) => max(s.map((x) => x.reps)), fmt: (v) => `${v} reps` },
+      { key: 'totalReps', label: 'Total Reps', of: (s) => sum(s.map((x) => x.reps)), fmt: (v) => `${v} reps` },
+    ];
+    if (!hasWeight) return reps;
+    return [
+      { key: 'weight', label: 'Heaviest Weight', of: (s) => max(s.map((x) => x.weight)), fmt: w },
+      { key: '1rm', label: 'One Rep Max', of: (s) => max(s.map((x) => e1rm(x.weight, x.reps))), fmt: w },
+      { key: 'setVol', label: 'Best Set Volume', of: (s) => max(s.map((x) => x.weight * x.reps)), fmt: w },
+      { key: 'volume', label: 'Session Volume', of: (s) => sum(s.map((x) => x.weight * x.reps)), fmt: w },
+      ...reps.slice(1),
+    ];
+  }, [kind, hasWeight, unit]);
 
-      const sessionMap = new Map<string, WorkoutSet[]>();
-      for (const s of sets) {
-        if (!sessionMap.has(s.sessionId)) sessionMap.set(s.sessionId, []);
-        sessionMap.get(s.sessionId)!.push(s);
-      }
+  const metric = metrics.find((m) => m.key === metricKey) ?? metrics[0];
+  const cutoff = range.days === Infinity ? 0 : Date.now() - range.days * 86400000;
+  const points = entries
+    .filter((e) => e.session.startedAt >= cutoff)
+    .map((e) => ({
+      t: e.session.startedAt,
+      label: new Date(e.session.startedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+      value: Math.round(metric.of(e.sets) * 100) / 100,
+    }));
+  const latest = points[points.length - 1];
+  const first = points[0];
+  const change = latest && first && points.length > 1 && first.value > 0 ? ((latest.value - first.value) / first.value) * 100 : null;
 
-      const sessions: WorkoutSession[] = await db.workoutSessions
-        .where('id')
-        .anyOf(Array.from(sessionMap.keys()))
-        .toArray();
+  // All-time records: best value of each metric, with the date it was set.
+  const records = metrics
+    .map((m) => {
+      let best = 0;
+      let when = 0;
+      entries.forEach((e) => {
+        const v = m.of(e.sets);
+        if (v > best) {
+          best = v;
+          when = e.session.startedAt;
+        }
+      });
+      return { m, best, when };
+    })
+    .filter((r) => r.best > 0 && !r.m.key.startsWith('total') && r.m.key !== 'time');
 
-      sessions.sort((a: WorkoutSession, b: WorkoutSession) => a.startedAt - b.startedAt);
+  // Best weight ever lifted for each rep count.
+  const byReps = useMemo(() => {
+    const best = new Map<number, number>();
+    entries.forEach((e) =>
+      e.sets.forEach((s) => {
+        if (s.weight > 0 && s.reps > 0 && s.reps <= 15) best.set(s.reps, Math.max(best.get(s.reps) ?? 0, s.weight));
+      })
+    );
+    return [...best.entries()].sort((a, b) => a[0] - b[0]);
+  }, [entries]);
 
-      let highest1RM = 0;
-      const points: { date: string; maxWeight: number; est1RM: number }[] = [];
-
-      for (const sess of sessions) {
-        const sSets = sessionMap.get(sess.id) || [];
-        const maxW = Math.max(0, ...sSets.map((s: WorkoutSet) => s.weight));
-        const sessionBest1RM = Math.max(
-          0,
-          ...sSets.map((s: WorkoutSet) => s.weight * (1 + s.reps / 30))
-        );
-        if (sessionBest1RM > highest1RM) highest1RM = sessionBest1RM;
-
-        points.push({
-          date: new Date(sess.startedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-          maxWeight: Math.round(maxW),
-          est1RM: Math.round(sessionBest1RM),
-        });
-      }
-
-      setHistorySets(sets.slice(-15).reverse());
-      setChartData(points.slice(-10));
-      setBest1RM(Math.round(highest1RM));
-    }
-
-    loadHistory();
-  }, [exerciseId]);
-
-  const handleSaveNotes = async () => {
-    await db.exercises.update(exerciseId, { notes });
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+  const saveNotes = () => {
+    if (exercise && notes !== (exercise.notes ?? '')) db.exercises.update(exerciseId, { notes });
   };
 
-  if (!exercise) {
-    return (
-      <div style={{ padding: 20, textAlign: 'center', color: '#7C7C87' }}>
-        Loading exercise…
-      </div>
-    );
-  }
+  if (!exercise) return <div className="topbar" style={{ paddingLeft: 4 }}><button className="icon-btn" onClick={onBack} aria-label="Back"><ChevronLeft size={26} /></button></div>;
 
   return (
-    <div style={{ minHeight: '100%', paddingBottom: 80, backgroundColor: '#000000' }}>
-      {/* Header */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-          backgroundColor: '#141416',
-          borderBottom: '1px solid #232327',
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        <button
-          onClick={onBack}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#A1A1AA',
-            display: 'flex',
-            alignItems: 'center',
-            cursor: 'pointer',
-            padding: 4,
-          }}
-        >
-          <ArrowLeft size={20} />
+    <div>
+      <div className="topbar" style={{ position: 'sticky', top: 0, paddingLeft: 4, borderBottom: 0 }}>
+        <button className="icon-btn" onClick={onBack} aria-label="Back">
+          <ChevronLeft size={26} />
         </button>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#FAFAFA', flex: 1 }}>
-          {exercise.name}
-        </h2>
+        <h1>{exercise.name}</h1>
+      </div>
+      <div className="pad" style={{ position: 'sticky', top: 52, zIndex: 4, background: 'var(--bg)', paddingBottom: 10, borderBottom: '1px solid var(--line)' }}>
+        <div className="seg">
+          {(
+            [
+              ['summary', 'Summary'],
+              ['history', 'History'],
+              ['howto', 'How to'],
+            ] as const
+          ).map(([id, label]) => (
+            <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div style={{ padding: '20px 16px', maxWidth: 640, margin: '0 auto' }}>
-        <ExerciseHowTo exerciseId={exerciseId} />
-
-        {/* Info card */}
-        <div
-          style={{
-            backgroundColor: '#141416',
-            borderRadius: 16,
-            padding: 16,
-            border: '1px solid #232327',
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: '3px 8px',
-                borderRadius: 6,
-                backgroundColor: '#232327',
-                color: '#2F8CFF',
-              }}
-            >
-              {exercise.category}
-            </span>
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: '3px 8px',
-                borderRadius: 6,
-                backgroundColor: '#232327',
-                color: '#2FD67B',
-              }}
-            >
-              {exercise.trackingType}
-            </span>
-          </div>
-
-          <div style={{ fontSize: 13, color: '#A1A1AA', marginBottom: 4 }}>
-            <strong style={{ color: '#FAFAFA' }}>Primary:</strong> {exercise.primaryMuscles.join(', ')}
-          </div>
-          {exercise.secondaryMuscles.length > 0 && (
-            <div style={{ fontSize: 13, color: '#7C7C87' }}>
-              <strong style={{ color: '#A1A1AA' }}>Secondary:</strong> {exercise.secondaryMuscles.join(', ')}
-            </div>
-          )}
-
-          {/* 1RM PR Badge */}
-          {best1RM > 0 && (
-            <div
-              style={{
-                marginTop: 14,
-                padding: '10px 14px',
-                backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                borderRadius: 10,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Trophy size={18} color="#F59E0B" />
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#F59E0B' }}>
-                  Estimated 1RM PR
-                </span>
+      <div className="pad" style={{ paddingTop: 14, paddingBottom: 48, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14 }}>
+        {tab === 'summary' && (
+          <>
+            <ExerciseDemo exerciseId={exerciseId} />
+            <div>
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-0.02em' }}>{exercise.name}</div>
+              <div className="muted" style={{ fontSize: 14.5, marginTop: 3 }}>
+                Primary: <span style={{ color: 'var(--text)' }}>{exercise.primaryMuscles.join(', ') || '—'}</span>
               </div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#FAFAFA' }}>
-                {best1RM} {unit}
-              </div>
+              {exercise.secondaryMuscles.length > 0 && (
+                <div className="dim" style={{ fontSize: 14, marginTop: 1 }}>
+                  Secondary: {exercise.secondaryMuscles.join(', ')}
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* 1RM & Weight Progression Chart */}
-        {chartData.length > 1 && (
-          <div
-            style={{
-              backgroundColor: '#141416',
-              borderRadius: 16,
-              padding: 16,
-              border: '1px solid #232327',
-              marginBottom: 16,
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#FAFAFA' }}>
-              Progression Trend ({unit})
-            </h3>
-            <div style={{ width: '100%', height: 180 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#232327" />
-                  <XAxis dataKey="date" stroke="#7C7C87" fontSize={11} />
-                  <YAxis stroke="#7C7C87" fontSize={11} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#141416', borderColor: '#232327', color: '#FAFAFA' }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="est1RM"
-                    name="Est 1RM"
-                    stroke="#F59E0B"
-                    strokeWidth={2}
-                    dot={{ fill: '#F59E0B', r: 3 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="maxWeight"
-                    name="Max Weight"
-                    stroke="#2F8CFF"
-                    strokeWidth={2}
-                    dot={{ fill: '#2F8CFF', r: 3 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+            <section className="card" style={{ padding: 16 }}>
+              {points.length === 0 ? (
+                <div className="dim" style={{ textAlign: 'center', padding: '26px 0', fontSize: 14.5 }}>
+                  {entries.length ? 'No workouts in this period' : 'Log this exercise to see your progress here'}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span className="num" style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                      {metric.fmt(latest.value)}
+                    </span>
+                    <span className="dim" style={{ fontSize: 13.5 }}>
+                      {latest.label}
+                    </span>
+                    {change !== null && Math.abs(change) >= 0.5 && (
+                      <span className="num" style={{ marginLeft: 'auto', fontSize: 13.5, fontWeight: 700, color: change > 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {change > 0 ? '+' : ''}
+                        {change.toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ height: 170, margin: '12px -6px 4px -14px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={points} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
+                        <defs>
+                          <linearGradient id="exFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#2F8CFF" stopOpacity={0.35} />
+                            <stop offset="100%" stopColor="#2F8CFF" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="#232327" vertical={false} />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: '#7C7C87', fontSize: 11 }} />
+                        <YAxis width={44} tickLine={false} axisLine={false} domain={['auto', 'auto']} tick={{ fill: '#7C7C87', fontSize: 11 }} tickFormatter={(v: number) => (kind === 'Time' || metric.key === 'time' ? fmtTime(v) : fmtNum(v))} />
+                        <Tooltip
+                          cursor={{ stroke: '#3a3a42' }}
+                          contentStyle={{ background: '#1c1c20', border: '1px solid #2a2a30', borderRadius: 10, fontSize: 13 }}
+                          labelStyle={{ color: '#a3a3ad' }}
+                          formatter={(v) => [metric.fmt(Number(v)), metric.label]}
+                        />
+                        <Area type="monotone" dataKey="value" stroke="#2F8CFF" strokeWidth={2.5} fill="url(#exFill)" dot={points.length < 25 ? { r: 3, fill: '#2F8CFF', strokeWidth: 0 } : false} isAnimationActive={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              )}
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', margin: '10px -16px 0', padding: '0 16px' }}>
+                {metrics.map((m) => (
+                  <button key={m.key} className={`chip${metric.key === m.key ? ' on' : ''}`} onClick={() => setMetricKey(m.key)}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <div className="seg" style={{ marginTop: 12 }}>
+                {RANGES.map((r) => (
+                  <button key={r.label} className={range.label === r.label ? 'on' : ''} onClick={() => setRange(r)}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {records.length > 0 && (
+              <section className="card" style={{ padding: '14px 16px 6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 750, marginBottom: 6 }}>
+                  <Medal size={18} color="var(--yellow)" /> Personal Records
+                </div>
+                {records.map((r) => (
+                  <div key={r.m.key} style={{ display: 'flex', alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--line)' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15 }}>{r.m.label}</div>
+                      <div className="dim" style={{ fontSize: 12.5 }}>
+                        {new Date(r.when).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
+                    </div>
+                    <div className="num" style={{ fontSize: 16, fontWeight: 750, color: 'var(--accent)' }}>
+                      {r.m.fmt(Math.round(r.best * 100) / 100)}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {byReps.length > 1 && (
+              <section className="card" style={{ padding: '14px 16px 8px' }}>
+                <div style={{ fontSize: 16, fontWeight: 750, marginBottom: 8 }}>Best Weight by Reps</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 20 }}>
+                  {byReps.map(([reps, weight]) => (
+                    <div key={reps} className="num" style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: '1px solid var(--line)', fontSize: 14.5 }}>
+                      <span className="muted">
+                        {reps} rep{reps > 1 ? 's' : ''}
+                      </span>
+                      <span style={{ fontWeight: 650 }}>
+                        {fmtNum(weight)} {unit}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section>
+              <p className="section-label" style={{ margin: '4px 2px 8px' }}>
+                Notes
+              </p>
+              <textarea
+                className="field"
+                rows={3}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={saveNotes}
+                placeholder="Seat height, grip width, cues..."
+              />
+            </section>
+          </>
         )}
 
-        {/* Persistent Notes */}
-        <div
-          style={{
-            backgroundColor: '#141416',
-            borderRadius: 16,
-            padding: 16,
-            border: '1px solid #232327',
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#FAFAFA' }}>
-              Pinned Exercise Notes
-            </h3>
-            <button
-              onClick={handleSaveNotes}
-              style={{
-                backgroundColor: isSaved ? '#2FD67B' : '#232327',
-                border: 'none',
-                borderRadius: 6,
-                padding: '4px 10px',
-                color: '#FAFAFA',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              <Save size={13} /> {isSaved ? 'Saved!' : 'Save'}
-            </button>
-          </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Seat height, barbell grip width, cues (e.g. pause 2s at bottom)…"
-            rows={3}
-            style={{
-              width: '100%',
-              padding: '8px 10px',
-              backgroundColor: '#000000',
-              border: '1px solid #232327',
-              borderRadius: 8,
-              color: '#FAFAFA',
-              fontSize: 13,
-              outline: 'none',
-              resize: 'none',
-            }}
-          />
-        </div>
-
-        {/* Recent Sets Log */}
-        <div
-          style={{
-            backgroundColor: '#141416',
-            borderRadius: 16,
-            padding: 16,
-            border: '1px solid #232327',
-          }}
-        >
-          <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: '#FAFAFA' }}>
-            Recent Sets History
-          </h3>
-
-          {historySets.length === 0 ? (
-            <div style={{ color: '#7C7C87', fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
-              No completed sets recorded for this exercise yet.
-            </div>
+        {tab === 'history' &&
+          (entries.length === 0 ? (
+            <p className="dim" style={{ textAlign: 'center', margin: '40px 0', fontSize: 15 }}>
+              No history yet
+            </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {historySets.map((s: WorkoutSet) => (
-                <div
-                  key={s.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    backgroundColor: '#000000',
-                    borderRadius: 8,
-                    border: '1px solid #232327',
-                    fontSize: 13,
-                  }}
-                >
-                  <span style={{ color: '#A1A1AA' }}>
-                    {new Date(s.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} • Set {s.setNumber} ({s.type})
-                  </span>
-                  <span style={{ fontWeight: 700, color: '#2F8CFF' }}>
-                    {s.weight} {unit} × {s.reps} reps
-                  </span>
+            [...entries].reverse().map(({ session, sets }) => (
+              <article key={session.id} className="card tappable" style={{ padding: 14 }} onClick={() => push({ type: 'workout', id: session.id })}>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{session.routineName || 'Workout'}</div>
+                <div className="dim" style={{ fontSize: 13, marginBottom: 8 }}>
+                  {relDate(session.startedAt)}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                {sets.map((s, i) => (
+                  <div key={s.id} className="num" style={{ display: 'flex', gap: 14, padding: '4px 0', fontSize: 15 }}>
+                    <span className="dim" style={{ width: 16, fontWeight: 700 }}>
+                      {s.type === 'failure' ? 'F' : s.type === 'dropset' ? 'D' : i + 1}
+                    </span>
+                    <span>{fmtSet(s, kind, unit)}</span>
+                  </div>
+                ))}
+              </article>
+            ))
+          ))}
+
+        {tab === 'howto' &&
+          (EXERCISE_MEDIA[exerciseId] ? (
+            <ExerciseHowTo exerciseId={exerciseId} defaultOpen />
+          ) : (
+            <p className="dim" style={{ textAlign: 'center', margin: '40px 0', fontSize: 15 }}>
+              No instructions for this exercise
+            </p>
+          ))}
       </div>
     </div>
   );

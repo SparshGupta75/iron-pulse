@@ -62,6 +62,8 @@ button {
   margin: 0 auto;
   position: relative;
   overflow: hidden;
+  /* clip (unlike hidden) can't be scrolled by focus or scripts, so screens never shift */
+  overflow: clip;
 }
 
 /* On wide screens keep every fixed overlay inside the phone-width column. */
@@ -485,7 +487,6 @@ textarea.field {
   text-align: center;
 }
 .set-row {
-  scroll-margin-bottom: 64px;
   min-height: 46px;
   transition: background 0.22s;
 }

@@ -8,6 +8,8 @@ An offline-first workout tracker PWA: routines, live set logging, rest timers, p
 - **Workout** – start an empty workout or a routine; routines grouped in folders
 - **Logger** – set table with previous values, warm-up / failure / drop sets, per-exercise rest timer, supersets, RPE, plate calculator, live record medals; survives reloads and can be minimised
 - **Profile** – 12-week duration / volume / reps chart, statistics, exercise library, body measures, calendar
+- **Exercise pages** – demo photos, how-to steps, progress charts, personal records, best weight per rep count
+- **Extras** – edit past workouts, timed/distance exercises, drag-to-reorder, share-card image, weekly/monthly reports, calendar reminders
 - **Import** – bring in workout history from a CSV export (Settings)
 
 ## Develop
