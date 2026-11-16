@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronLeft, Dumbbell, PersonStanding, Cable, Cog, HeartPulse } from 'lucide-react';
 import type { Exercise, EquipmentCategory } from '../types';
 import { muscleColor } from '../utils/format';
 import { useNav } from '../store/navStore';
+import { EXERCISE_MEDIA } from '../db/exerciseMedia';
 
 /** Bottom sheet with a dimmed backdrop. Tap outside to dismiss. */
 export function Sheet({
@@ -95,9 +96,29 @@ const CATEGORY_ICON: Record<EquipmentCategory, typeof Dumbbell> = {
   Cardio: HeartPulse,
 };
 
-/** Round, muscle-tinted badge that stands in for an exercise thumbnail. */
+const mediaUrl = (exerciseId: string, frame: 0 | 1): string | null => {
+  const set = EXERCISE_MEDIA[exerciseId];
+  return set ? `${import.meta.env.BASE_URL}exercises/${set}-${frame}.webp` : null;
+};
+
+/** Exercise thumbnail: a photo when we have one, otherwise a muscle-tinted icon badge. */
 export function ExerciseAvatar({ exercise, size = 44 }: { exercise?: Exercise | null; size?: number }) {
+  const [failed, setFailed] = useState(false);
   const color = muscleColor(exercise?.primaryMuscles[0]);
+  const src = exercise && !failed ? mediaUrl(exercise.id, 0) : null;
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        width={size}
+        height={size}
+        onError={() => setFailed(true)}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--line)' }}
+      />
+    );
+  }
   const Icon = exercise ? CATEGORY_ICON[exercise.category] ?? Dumbbell : Dumbbell;
   return (
     <div
@@ -105,6 +126,44 @@ export function ExerciseAvatar({ exercise, size = 44 }: { exercise?: Exercise | 
       style={{ width: size, height: size, background: `${color}22`, color, border: `1px solid ${color}33` }}
     >
       <Icon size={size * 0.46} strokeWidth={2.1} />
+    </div>
+  );
+}
+
+/** Large start/end photos that cross-fade like a looping demo. Renders nothing without photos. */
+export function ExerciseDemo({ exerciseId }: { exerciseId: string }) {
+  const [frame, setFrame] = useState<0 | 1>(0);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const id = setInterval(() => setFrame((f) => (f ? 0 : 1)), 1100);
+    return () => clearInterval(id);
+  }, []);
+  const a = mediaUrl(exerciseId, 0);
+  const b = mediaUrl(exerciseId, 1);
+  if (!a || !b || failed) return null;
+  return (
+    <div style={{ position: 'relative', width: '100%', aspectRatio: '4 / 3', borderRadius: 16, overflow: 'hidden', background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+      {[a, b].map((src, i) => (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          onError={() => setFailed(true)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: frame === i ? 1 : 0, transition: 'opacity 0.35s ease' }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Small dialog anchored near the top so the on-screen keyboard never covers it. */
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="backdrop" style={{ alignItems: 'flex-start', justifyContent: 'center', padding: '14vh 20px 0' }} onClick={onClose}>
+      <div className="card" style={{ width: '100%', maxWidth: 400, padding: 18, animation: 'pop 0.2s ease' }} onClick={(e) => e.stopPropagation()}>
+        <p style={{ margin: '0 0 12px', fontSize: 17, fontWeight: 700 }}>{title}</p>
+        {children}
+      </div>
     </div>
   );
 }

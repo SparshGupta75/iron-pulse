@@ -5,7 +5,7 @@ import { useHistory } from '../hooks/useHistory';
 import { useNav, type Screen } from '../store/navStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { fmtVolume, weekStart, weekStreak } from '../utils/format';
-import { Sheet } from '../components/ui';
+import { Dialog } from '../components/ui';
 
 type Metric = 'duration' | 'volume' | 'reps';
 const WEEKS = 12;
@@ -78,9 +78,10 @@ export default function ProfilePage() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <button
               onClick={() => (setDraft(profileName), setEditing(true))}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'none', padding: 0, color: 'var(--text)', fontSize: 22, fontWeight: 750, letterSpacing: '-0.02em', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: '100%', border: 0, background: 'none', padding: 0, color: 'var(--text)', fontSize: 22, fontWeight: 750, letterSpacing: '-0.02em', cursor: 'pointer' }}
             >
-              {profileName} <Pencil size={15} color="var(--text-3)" />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profileName}</span>
+              <Pencil size={15} color="var(--text-3)" style={{ flexShrink: 0 }} />
             </button>
             <div style={{ display: 'flex', gap: 22, marginTop: 10 }}>
               {[
@@ -164,20 +165,37 @@ export default function ProfilePage() {
       </div>
 
       {editing && (
-        <Sheet title="Your name" onClose={() => setEditing(false)}>
-          <div style={{ display: 'grid', gap: 10, padding: '0 4px' }}>
-            <input className="field" autoFocus maxLength={30} value={draft} onChange={(e) => setDraft(e.target.value)} />
-            <button
-              className="btn primary block"
-              onClick={() => {
-                if (draft.trim()) setProfileName(draft.trim());
-                setEditing(false);
-              }}
-            >
-              Save
-            </button>
-          </div>
-        </Sheet>
+        <Dialog title="Your name" onClose={() => setEditing(false)}>
+          <form
+            style={{ display: 'grid', gap: 10 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (draft.trim()) setProfileName(draft.trim());
+              setEditing(false);
+            }}
+          >
+            <input
+              className="field"
+              autoFocus
+              type="text"
+              enterKeyHint="done"
+              autoComplete="off"
+              autoCapitalize="words"
+              maxLength={40}
+              placeholder="Enter your name"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setEditing(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn primary" disabled={!draft.trim()}>
+                Save
+              </button>
+            </div>
+          </form>
+        </Dialog>
       )}
     </div>
   );

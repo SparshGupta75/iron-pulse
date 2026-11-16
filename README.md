@@ -30,3 +30,7 @@ Open the published URL, then:
 - **Android (Chrome)** – menu → *Install app*
 
 Data is stored per browser and per URL; use Settings to export a backup before clearing site data.
+
+## Credits
+
+Exercise photos and instructions come from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (public domain, Unlicense).

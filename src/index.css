@@ -485,6 +485,7 @@ textarea.field {
   text-align: center;
 }
 .set-row {
+  scroll-margin-bottom: 64px;
   min-height: 46px;
   transition: background 0.22s;
 }

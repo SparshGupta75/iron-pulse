@@ -229,9 +229,15 @@ export function ExerciseBlock({ info, exercise, index, count, superset, others }
             <button
               className={`set-check${s.completed ? ' on' : ''}`}
               aria-label={s.completed ? 'Mark set incomplete' : 'Mark set complete'}
-              onClick={() => {
+              onClick={(e) => {
                 primeAudio();
-                if (!s.completed) buzz(10);
+                if (!s.completed) {
+                  buzz(10);
+                  // The rest bar is about to take space at the bottom: keep the next row in view.
+                  const row = e.currentTarget.parentElement;
+                  const next = (row?.nextElementSibling ?? row) as HTMLElement | null;
+                  setTimeout(() => next?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 320);
+                }
                 toggleSet(s.id, { weight: hintWeight, reps: prev?.reps ?? info.repMax }, exercise?.name);
               }}
             >

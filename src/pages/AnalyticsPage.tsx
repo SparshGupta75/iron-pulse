@@ -6,8 +6,6 @@ import {
 } from 'lucide-react';
 import {
   ResponsiveContainer,
-  BarChart,
-  Bar,
   LineChart,
   Line,
   XAxis,
@@ -45,7 +43,7 @@ export default function AnalyticsPage() {
     return init as Record<MuscleGroup, MuscleData>;
   });
 
-  const [volumeByMuscleChart, setVolumeByMuscleChart] = useState<{ muscle: string; sets: number }[]>([]);
+  const [, setVolumeByMuscleChart] = useState<{ muscle: string; sets: number }[]>([]);
   const [oneRmCompoundData, setOneRmCompoundData] = useState<
     { date: string; Bench: number; Squat: number; Deadlift: number; OHP: number }[]
   >([]);
@@ -311,36 +309,6 @@ export default function AnalyticsPage() {
         <div style={{ marginBottom: 20 }}>
           <MuscleHeatmap muscleStats={muscleStats} />
         </div>
-
-        {/* Weekly Volume by Muscle Group Bar Chart */}
-        {volumeByMuscleChart.length > 0 && (
-          <div
-            style={{
-              backgroundColor: '#141416',
-              borderRadius: 16,
-              padding: 16,
-              border: '1px solid #232327',
-              marginBottom: 20,
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: '#FAFAFA' }}>
-              Working Sets by Muscle Group
-            </h3>
-            <div style={{ width: '100%', height: 200 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={volumeByMuscleChart} layout="vertical" margin={{ left: 20, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#232327" horizontal={false} />
-                  <XAxis type="number" stroke="#7C7C87" fontSize={11} />
-                  <YAxis type="category" dataKey="muscle" stroke="#A1A1AA" fontSize={11} width={80} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#141416', borderColor: '#232327', color: '#FAFAFA' }}
-                  />
-                  <Bar dataKey="sets" name="Sets" fill="#2FD67B" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
 
         {/* Compound 1RM Progression (Big 4) */}
         {oneRmCompoundData.length > 0 && (

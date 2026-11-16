@@ -1,3 +1,4 @@
+import { ExerciseHowTo } from '../components/ExerciseHowTo';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Trophy, Save } from 'lucide-react';
 import {
@@ -134,6 +135,8 @@ export function ExerciseDetailPage({ exerciseId, onBack }: Props) {
       </div>
 
       <div style={{ padding: '20px 16px', maxWidth: 640, margin: '0 auto' }}>
+        <ExerciseHowTo exerciseId={exerciseId} />
+
         {/* Info card */}
         <div
           style={{
